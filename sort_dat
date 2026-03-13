@@ -1,0 +1,60 @@
+import glob
+import os
+import cv2
+from ultralytics import YOLO
+
+image_dir = "b_im"
+label_dir = "dataset/labels_birds"
+os.makedirs(label_dir, exist_ok=True)
+
+model = YOLO("yolov8s.pt")
+images = glob.glob(os.path.join(image_dir, "*.png"))
+images.sort()
+
+MAX_SIZE = 0.18
+
+def resize_img(img, size=640):
+    h, w = img.shape[:2]
+    scale = min(size / w, size / h)
+    new_w, new_h = int(w * scale), int(h * scale)
+    resized = cv2.resize(img, (new_w, new_h))
+
+    canvas = cv2.copyMakeBorder(
+        resized,
+        top=(size - new_h) // 2,
+        bottom=(size - new_h + 1) // 2,
+        left=(size - new_w) // 2,
+        right=(size - new_w + 1) // 2,
+        borderType=cv2.BORDER_CONSTANT,
+        value=(0, 0, 0) 
+    )
+    return canvas
+
+for i, path in enumerate(images):
+    results = model(path)
+    detections = results[0].boxes
+    val_boxes = []
+
+    for b in detections:
+        x_center, y_center, w, h = b.xywhn[0].tolist()
+        if w <= MAX_SIZE and h <= MAX_SIZE:
+            val_boxes.append((x_center, y_center, w, h))
+
+    if len(val_boxes) > 0:
+        new_name = f"bird_image_{i:06d}.png"
+        new_path = os.path.join(image_dir, new_name)
+
+
+        img = cv2.imread(path)
+        img_resized = resize_img(img, 640)
+        cv2.imwrite(new_path, img_resized)
+
+        # створюємо label
+        label_path = os.path.join(label_dir, new_name.replace(".png", ".txt"))
+        with open(label_path, "w") as f:
+            for x_center, y_center, w, h in val_boxes:
+                f.write(f"1 {x_center:.6f} {y_center:.6f} {w:.6f} {h:.6f}\n")
+
+        os.remove(path) 
+    else:
+        os.remove(path)
